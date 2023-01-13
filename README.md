@@ -1,3 +1,5 @@
+[![Go Documentation](https://godocs.io/github.com/threefoldtech/rmb-sdk-go?status.svg)](https://godocs.io/github.com/threefoldtech/rmb-sdk-go)
+
 # Introduction
 This is a `GO` sdk that can be used to build both **services**, and **clients**
 that can talk over the `rmb`.
