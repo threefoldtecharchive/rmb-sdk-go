@@ -22,7 +22,6 @@ func (s *RmbSigner) Verify(signingString, signature string, key interface{}) err
 }
 
 func (s *RmbSigner) Sign(signingString string, key interface{}) (string, error) {
-	fmt.Printf("Sig string: %s\n", signingString)
 	identity, ok := key.(substrate.Identity)
 	if !ok {
 		return "", fmt.Errorf("invalid key expecting substrate identity")
@@ -40,9 +39,10 @@ func (s *RmbSigner) Alg() string {
 	return "RS512"
 }
 
-func NewJWT(id uint32, identity substrate.Identity) (string, error) {
+func NewJWT(identity substrate.Identity, id uint32, session string) (string, error) {
 	token := jwt.NewWithClaims(&RmbSigner{}, jwt.MapClaims{
 		"sub": id,
+		"sid": session,
 		"iat": time.Now().Unix(),
 		"exp": 600,
 	})

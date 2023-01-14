@@ -23,36 +23,6 @@ type twinKeyID struct{}
 // messageKey is where the original message is stored
 type messageKey struct{}
 
-// Request is an struct used to communicate over the messagebus
-type Request struct {
-	Version    int      `json:"ver"`
-	Reference  string   `json:"ref"`
-	Command    string   `json:"cmd"`
-	Expiration int      `json:"exp"`
-	Data       string   `json:"dat"`
-	TwinSrc    uint32   `json:"src"`
-	TwinDest   []uint32 `json:"dst"`
-	RetQueue   string   `json:"ret"`
-	Schema     string   `json:"shm"`
-	Epoch      int64    `json:"now"`
-}
-
-type Error struct {
-	Code    uint32 `json:"code"`
-	Message string `json:"message"`
-}
-
-type Response struct {
-	Version   int    `json:"ver"`
-	Reference string `json:"ref"`
-	Data      string `json:"dat"`
-	TwinSrc   uint32 `json:"src"`
-	TwinDest  uint32 `json:"dst"`
-	Schema    string `json:"shm"`
-	Epoch     int64  `json:"now"`
-	Error     *Error `json:"err,omitempty"`
-}
-
 type messageBusSubrouter struct {
 	handlers map[string]Handler
 	sub      map[string]*messageBusSubrouter
@@ -208,7 +178,7 @@ func (m *DefaultRouter) Run(ctx context.Context) error {
 		topics[i] = "msgbus." + topic
 	}
 
-	jobs := make(chan Request, numWorkers)
+	jobs := make(chan Incoming, numWorkers)
 	for i := 1; i <= numWorkers; i++ {
 		go m.worker(ctx, jobs)
 	}
@@ -231,7 +201,7 @@ func (m *DefaultRouter) Run(ctx context.Context) error {
 			continue
 		}
 
-		var message Request
+		var message Incoming
 		err = json.Unmarshal(data[1], &message)
 		if err != nil {
 			log.Err(err).Msg("failed to unmarshal message")
@@ -246,7 +216,7 @@ func (m *DefaultRouter) Run(ctx context.Context) error {
 	}
 }
 
-func (m *DefaultRouter) worker(ctx context.Context, jobs chan Request) {
+func (m *DefaultRouter) worker(ctx context.Context, jobs chan Incoming) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -273,7 +243,7 @@ func (m *DefaultRouter) worker(ctx context.Context, jobs chan Request) {
 			if err != nil {
 				log.Debug().
 					Err(err).
-					Uint32("twin", message.TwinSrc).
+					Str("twin", message.TwinSrc).
 					Str("handler", message.Command).
 					Msg("error while handling job")
 				// TODO: create an error object
@@ -301,9 +271,9 @@ func GetTwinID(ctx context.Context) uint32 {
 	return twin
 }
 
-// GetMessage gets a message from the context, panics if it's not there
-func GetMessage(ctx context.Context) Request {
-	message, ok := ctx.Value(messageKey{}).(Request)
+// GetRequest gets a message from the context, panics if it's not there
+func GetRequest(ctx context.Context) Incoming {
+	message, ok := ctx.Value(messageKey{}).(Incoming)
 	if !ok {
 		panic("failed to load message from context")
 	}
@@ -330,7 +300,7 @@ func (m *DefaultRouter) sendReply(retQueue string, message Response, data interf
 
 	log.Debug().
 		Str("id", message.Reference).
-		Uint32("to", message.TwinDest).
+		Str("to", message.TwinDest).
 		Msg("pushing response")
 
 	_, err = con.Do("LPUSH", retQueue, string(bytes))
@@ -339,9 +309,4 @@ func (m *DefaultRouter) sendReply(retQueue string, message Response, data interf
 	}
 
 	return nil
-}
-
-// GetPayload returns the payload for a message's data
-func (m *Request) GetPayload() ([]byte, error) {
-	return base64.StdEncoding.DecodeString(m.Data)
 }

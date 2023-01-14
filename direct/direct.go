@@ -12,14 +12,14 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
-	"github.com/threefoldtech/rmb"
-	"github.com/threefoldtech/rmb/direct/types"
+	"github.com/threefoldtech/rmb-sdk-go"
+	"github.com/threefoldtech/rmb-sdk-go/direct/types"
 	"github.com/threefoldtech/substrate-client"
 	"google.golang.org/protobuf/proto"
 )
 
 type directClient struct {
-	id        uint32
+	source    types.Address
 	signer    substrate.Identity
 	con       *websocket.Conn
 	responses map[string]chan *types.Envelope
@@ -27,13 +27,17 @@ type directClient struct {
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, url string, id uint32, identity substrate.Identity) (rmb.Client, error) {
-	token, err := NewJWT(id, identity)
+func NewClient(ctx context.Context, identity substrate.Identity, url string, id uint32, session string) (rmb.Client, error) {
+	token, err := NewJWT(identity, id, session)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build authentication token")
 	}
 	// wss://relay.dev.grid.tf/?<JWT>
 	url = fmt.Sprintf("%s?%s", url, token)
+	source := types.Address{
+		Twin:       id,
+		Connection: &session,
+	}
 
 	con, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
@@ -45,7 +49,7 @@ func NewClient(ctx context.Context, url string, id uint32, identity substrate.Id
 	}
 
 	cl := &directClient{
-		id:        id,
+		source:    source,
 		signer:    identity,
 		con:       con,
 		responses: make(map[string]chan *types.Envelope),
@@ -99,8 +103,8 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 		Uid:         uuid.NewString(),
 		Timestamp:   uint64(time.Now().Unix()),
 		Expiration:  ttl,
-		Source:      d.id,
-		Destination: dest,
+		Source:      &d.source,
+		Destination: &types.Address{Twin: dest},
 	}
 
 	env.Message = &types.Envelope_Request{

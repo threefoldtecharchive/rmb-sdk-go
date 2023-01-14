@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/threefoldtech/rmb/direct/types"
+	"github.com/threefoldtech/rmb-sdk-go/direct/types"
 )
 
 func Challenge(env *types.Envelope) ([]byte, error) {
@@ -35,10 +35,11 @@ func challenge(w io.Writer, env *types.Envelope) error {
 		return err
 	}
 
-	if _, err := fmt.Fprintf(w, "%d", env.Source); err != nil {
+	if err := challengeAddress(w, env.Source); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(w, "%d", env.Destination); err != nil {
+
+	if err := challengeAddress(w, env.Destination); err != nil {
 		return err
 	}
 
@@ -46,6 +47,20 @@ func challenge(w io.Writer, env *types.Envelope) error {
 		return challengeRequest(w, request)
 	} else if response := env.GetResponse(); response != nil {
 		return challengeResponse(w, response)
+	}
+
+	return nil
+}
+
+func challengeAddress(w io.Writer, addr *types.Address) error {
+	if _, err := fmt.Fprintf(w, "%d", addr.Twin); err != nil {
+		return err
+	}
+
+	if addr.Connection != nil {
+		if _, err := fmt.Fprintf(w, "%s", *addr.Connection); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -8,9 +8,9 @@ import (
 
 // LoggerMiddleware simple logger middleware.
 func LoggerMiddleware(ctx context.Context, payload []byte) (context.Context, error) {
-	msg := GetMessage(ctx)
+	msg := GetRequest(ctx)
 	log.Debug().
-		Uint32("twin", msg.TwinSrc).
+		Str("twin", msg.TwinSrc).
 		Str("fn", msg.Command).
 		Int("body-size", len(payload)).Msg("call")
 	return ctx, nil

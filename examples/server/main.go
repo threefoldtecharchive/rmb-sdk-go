@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/threefoldtech/rmb"
+	"github.com/threefoldtech/rmb-sdk-go"
 )
 
 func app() error {
@@ -22,7 +22,7 @@ func app() error {
 	app.WithHandler("add", func(ctx context.Context, payload []byte) (interface{}, error) {
 		// payload is the entire request data
 		// get full request if needed
-		msg := rmb.GetMessage(ctx)
+		msg := rmb.GetRequest(ctx)
 		fmt.Println("source twin: ", msg.TwinSrc)
 
 		var numbers []float64
