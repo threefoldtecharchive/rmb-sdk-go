@@ -24,10 +24,11 @@ type directClient struct {
 	con       *websocket.Conn
 	responses map[string]chan *types.Envelope
 	m         sync.Mutex
+	sub       *substrate.Substrate
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, identity substrate.Identity, url string, id uint32, session string) (rmb.Client, error) {
+func NewClient(ctx context.Context, identity substrate.Identity, url string, id uint32, session string, sub *substrate.Substrate) (rmb.Client, error) {
 	token, err := NewJWT(identity, id, session)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build authentication token")
@@ -174,11 +175,17 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return fmt.Errorf("no response received")
 	}
 
-	//TODO: signature verification must be done here
 	if response.Schema == nil || *response.Schema != rmb.DefaultSchema {
 		return fmt.Errorf("invalid schema received expected '%s'", rmb.DefaultSchema)
 	}
+
+	err = VerifySignature(d.sub, response)
+	if err != nil {
+		return errors.Wrap(err, "message signature verification failed")
+	}
+
 	resp := response.GetResponse()
+
 	if resp == nil {
 		return fmt.Errorf("received a non response envelope")
 	}
