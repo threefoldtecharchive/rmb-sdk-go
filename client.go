@@ -13,6 +13,8 @@ import (
 )
 
 const (
+	DefaultSchema = "application/json"
+
 	systemLocalBus = "msgbus.system.local"
 
 	// DefaultAddress default redis address when no address is passed
@@ -83,6 +85,7 @@ func (c *redisClient) Call(ctx context.Context, twin uint32, fn string, data int
 		Command:    fn,
 		TwinDest:   []uint32{twin},
 		Data:       base64.StdEncoding.EncodeToString(bytes),
+		Schema:     DefaultSchema,
 		RetQueue:   queue,
 	}
 
@@ -125,6 +128,10 @@ func (c *redisClient) Call(ctx context.Context, twin uint32, fn string, data int
 	// we have a response, so load or fail
 	if err := json.Unmarshal(bytes, &ret); err != nil {
 		return errors.Wrap(err, "failed to load response message")
+	}
+
+	if ret.Schema != DefaultSchema {
+		return fmt.Errorf("received invalid schema '%s' was expecting %s", ret.Schema, DefaultSchema)
 	}
 
 	// errorred ?

@@ -24,6 +24,7 @@ func app() error {
 		// get full request if needed
 		msg := rmb.GetRequest(ctx)
 		fmt.Println("source twin: ", msg.TwinSrc)
+		fmt.Println("message schema: ", msg.Schema)
 
 		var numbers []float64
 

@@ -99,12 +99,15 @@ func (d *directClient) router(env *types.Envelope) {
 }
 
 func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uint64) (*types.Envelope, error) {
+	schema := rmb.DefaultSchema
+
 	env := types.Envelope{
 		Uid:         uuid.NewString(),
 		Timestamp:   uint64(time.Now().Unix()),
 		Expiration:  ttl,
 		Source:      &d.source,
 		Destination: &types.Address{Twin: dest},
+		Schema:      &schema,
 	}
 
 	env.Message = &types.Envelope_Request{
@@ -172,12 +175,13 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 	}
 
 	//TODO: signature verification must be done here
-
+	if response.Schema == nil || *response.Schema != rmb.DefaultSchema {
+		return fmt.Errorf("invalid schema received expected '%s'", rmb.DefaultSchema)
+	}
 	resp := response.GetResponse()
 	if resp == nil {
 		return fmt.Errorf("received a non response envelope")
 	}
-
 	errResp := resp.GetError()
 	if errResp != nil {
 		// include code also
