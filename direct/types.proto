@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/threefoldtech/zos/pkg/rmb/client/direct";
+option go_package = "github.com/threefoldtech/zos/pkg/rmb/client/direct/types";
 
 message Request {
   // command queue to use on receiver side
