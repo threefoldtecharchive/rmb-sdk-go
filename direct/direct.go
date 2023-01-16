@@ -24,11 +24,11 @@ type directClient struct {
 	con       *websocket.Conn
 	responses map[string]chan *types.Envelope
 	m         sync.Mutex
-	sub       *substrate.Substrate
+	twinDB    TwinDB
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, identity substrate.Identity, url string, id uint32, session string, sub *substrate.Substrate) (rmb.Client, error) {
+func NewClient(ctx context.Context, identity substrate.Identity, url string, id uint32, session string, twinDB TwinDB) (rmb.Client, error) {
 	token, err := NewJWT(identity, id, session)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build authentication token")
@@ -54,6 +54,7 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, id 
 		signer:    identity,
 		con:       con,
 		responses: make(map[string]chan *types.Envelope),
+		twinDB:    twinDB,
 	}
 
 	go cl.process()
@@ -179,7 +180,7 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return fmt.Errorf("invalid schema received expected '%s'", rmb.DefaultSchema)
 	}
 
-	err = VerifySignature(d.sub, response)
+	err = VerifySignature(d.twinDB, response)
 	if err != nil {
 		return errors.Wrap(err, "message signature verification failed")
 	}

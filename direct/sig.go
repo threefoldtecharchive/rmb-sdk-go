@@ -8,7 +8,6 @@ import (
 	sr25519 "github.com/ChainSafe/go-schnorrkel"
 	"github.com/pkg/errors"
 	"github.com/threefoldtech/rmb-sdk-go/direct/types"
-	"github.com/threefoldtech/substrate-client"
 
 	"github.com/gtank/merlin"
 	"github.com/rs/zerolog/log"
@@ -94,14 +93,14 @@ func charToSigType(prefix byte) (string, error) {
 }
 
 // VerifySignature is responsible for verifying that the source produced this signature
-func VerifySignature(sub *substrate.Substrate, env *types.Envelope) error {
+func VerifySignature(twinDB TwinDB, env *types.Envelope) error {
 
-	twin, err := sub.GetTwin(env.Source.Twin)
+	twin, err := twinDB.GetTwin(env.Source.Twin)
 	if err != nil {
 		return errors.Wrapf(err, "could not get twin from twin id, twinID: %d", env.Source.Twin)
 	}
 
-	pk := twin.Account.PublicKey()
+	pk := twin.publikKey
 
 	sig := env.GetSignature()
 	if sig == nil {

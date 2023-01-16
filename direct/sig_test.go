@@ -4,21 +4,21 @@ import (
 	"testing"
 	"time"
 
+	gomock "github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/threefoldtech/rmb-sdk-go/direct/types"
 	"github.com/threefoldtech/substrate-client"
 )
 
-func TestSignature(t *testing.T) {
-	manager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
-	sub, err := manager.Substrate()
-	if err != nil {
-		t.Fatalf("could not initialize substrate connection: %s", err)
-	}
-	defer sub.Close()
+const sigVerifyAccMnemonics = "garage dad improve reunion girl saddle theory know label reason fantasy deputy"
+const sigVerifyAccTwinID = uint32(1171)
 
-	identity, err := substrate.NewIdentityFromSr25519Phrase("")
+var sigVerifyAccAddress = "5CtwsdH1ggRAgCv2GVfBviWywHzwsYJvhPWhmShpx2DGnb6B"
+
+func TestSignature(t *testing.T) {
+
+	identity, err := substrate.NewIdentityFromSr25519Phrase(sigVerifyAccMnemonics)
 	if err != nil {
 		t.Fatalf("could not init new identity: %s", err)
 	}
@@ -37,8 +37,10 @@ func TestSignature(t *testing.T) {
 		},
 	}
 	t.Run("valid signature", func(t *testing.T) {
+
+		ctrl := gomock.NewController(t)
 		env.Source = &types.Address{
-			Twin: 49,
+			Twin: sigVerifyAccTwinID,
 		}
 
 		toSign, err := Challenge(&env)
@@ -47,11 +49,22 @@ func TestSignature(t *testing.T) {
 		env.Signature, err = Sign(identity, toSign)
 		assert.NoError(t, err)
 
-		err = VerifySignature(sub, &env)
+		account, err := substrate.FromAddress(sigVerifyAccAddress)
+		assert.NoError(t, err)
+
+		twinDB := NewMockTwinDB(ctrl)
+		twinDB.EXPECT().GetTwin(sigVerifyAccTwinID).Return(Twin{
+			id:        sigVerifyAccTwinID,
+			publikKey: account.PublicKey(),
+		}, nil)
+
+		err = VerifySignature(twinDB, &env)
 		assert.NoError(t, err)
 	})
 
 	t.Run("invalid source", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+
 		env.Source = &types.Address{
 			Twin: 2,
 		}
@@ -62,18 +75,35 @@ func TestSignature(t *testing.T) {
 		env.Signature, err = Sign(identity, toSign)
 		assert.NoError(t, err)
 
-		err = VerifySignature(sub, &env)
+		twinDB := NewMockTwinDB(ctrl)
+		twinDB.EXPECT().GetTwin(uint32(2)).Return(Twin{
+			id:        2,
+			publikKey: []byte("gibberish"),
+		}, nil)
+
+		err = VerifySignature(twinDB, &env)
 		assert.Error(t, err)
 	})
 
 	t.Run("invalid signature", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+
 		env.Source = &types.Address{
-			Twin: 49,
+			Twin: sigVerifyAccTwinID,
 		}
 
 		env.Signature = []byte("s13p49fnaskdjnv")
 
-		err = VerifySignature(sub, &env)
+		account, err := substrate.FromAddress(sigVerifyAccAddress)
+		assert.NoError(t, err)
+
+		twinDB := NewMockTwinDB(ctrl)
+		twinDB.EXPECT().GetTwin(sigVerifyAccTwinID).Return(Twin{
+			id:        sigVerifyAccTwinID,
+			publikKey: account.PublicKey(),
+		}, nil)
+
+		err = VerifySignature(twinDB, &env)
 		assert.Error(t, err)
 	})
 }
