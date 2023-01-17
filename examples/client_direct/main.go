@@ -23,8 +23,7 @@ func app() error {
 	}
 	defer sub.Close()
 	twinDB := direct.NewTwinDB(sub)
-	var id uint32 = 7 //your twin id goes here
-	client, err := direct.NewClient(context.Background(), identity, "ws://localhost:8080", id, "test-client", twinDB)
+	client, err := direct.NewClient(context.Background(), identity, "ws://localhost:8080", "test-client", twinDB)
 
 	if err != nil {
 		return err

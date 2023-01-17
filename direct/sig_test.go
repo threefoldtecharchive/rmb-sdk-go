@@ -53,9 +53,9 @@ func TestSignature(t *testing.T) {
 		assert.NoError(t, err)
 
 		twinDB := NewMockTwinDB(ctrl)
-		twinDB.EXPECT().GetTwin(sigVerifyAccTwinID).Return(Twin{
-			id:        sigVerifyAccTwinID,
-			publikKey: account.PublicKey(),
+		twinDB.EXPECT().Get(sigVerifyAccTwinID).Return(Twin{
+			ID:        sigVerifyAccTwinID,
+			PublicKey: account.PublicKey(),
 		}, nil)
 
 		err = VerifySignature(twinDB, &env)
@@ -76,9 +76,9 @@ func TestSignature(t *testing.T) {
 		assert.NoError(t, err)
 
 		twinDB := NewMockTwinDB(ctrl)
-		twinDB.EXPECT().GetTwin(uint32(2)).Return(Twin{
-			id:        2,
-			publikKey: []byte("gibberish"),
+		twinDB.EXPECT().Get(uint32(2)).Return(Twin{
+			ID:        2,
+			PublicKey: []byte("gibberish"),
 		}, nil)
 
 		err = VerifySignature(twinDB, &env)
@@ -98,9 +98,9 @@ func TestSignature(t *testing.T) {
 		assert.NoError(t, err)
 
 		twinDB := NewMockTwinDB(ctrl)
-		twinDB.EXPECT().GetTwin(sigVerifyAccTwinID).Return(Twin{
-			id:        sigVerifyAccTwinID,
-			publikKey: account.PublicKey(),
+		twinDB.EXPECT().Get(sigVerifyAccTwinID).Return(Twin{
+			ID:        sigVerifyAccTwinID,
+			PublicKey: account.PublicKey(),
 		}, nil)
 
 		err = VerifySignature(twinDB, &env)
