@@ -20,15 +20,15 @@ type Twin struct {
 }
 
 type twinDBImpl struct {
-	cache   *cache.Cache
-	manager substrate.Manager
+	cache *cache.Cache
+	sub   *substrate.Substrate
 }
 
 // NewTwinDB creates a new twinDBImpl instance, with a non expiring cache.
-func NewTwinDB(manager substrate.Manager) TwinDB {
+func NewTwinDB(sub *substrate.Substrate) TwinDB {
 	return &twinDBImpl{
-		cache:   cache.New(0, 0),
-		manager: manager,
+		cache: cache.New(cache.NoExpiration, cache.NoExpiration),
+		sub:   sub,
 	}
 }
 
@@ -39,13 +39,7 @@ func (t *twinDBImpl) GetTwin(id uint32) (Twin, error) {
 		return cachedValue.(Twin), nil
 	}
 
-	sub, err := t.manager.Substrate()
-	if err != nil {
-		return Twin{}, err
-	}
-	defer sub.Close()
-
-	substrateTwin, err := sub.GetTwin(id)
+	substrateTwin, err := t.sub.GetTwin(id)
 	if err != nil {
 		return Twin{}, errors.Wrapf(err, "could net get twin with id %d", id)
 	}
@@ -55,7 +49,7 @@ func (t *twinDBImpl) GetTwin(id uint32) (Twin, error) {
 		publikKey: substrateTwin.Account.PublicKey(),
 	}
 
-	err = t.cache.Add(fmt.Sprint(id), twin, 0)
+	err = t.cache.Add(fmt.Sprint(id), twin, cache.DefaultExpiration)
 	if err != nil {
 		return Twin{}, errors.Wrapf(err, "could not set cache for twin with id %d", id)
 	}

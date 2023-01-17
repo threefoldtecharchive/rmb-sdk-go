@@ -17,7 +17,12 @@ func app() error {
 		return err
 	}
 	subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
-	twinDB := direct.NewTwinDB(subManager)
+	sub, err := subManager.Substrate()
+	if err != nil {
+		return err
+	}
+	defer sub.Close()
+	twinDB := direct.NewTwinDB(sub)
 	var id uint32 = 7 //your twin id goes here
 	client, err := direct.NewClient(context.Background(), identity, "ws://localhost:8080", id, "test-client", twinDB)
 
