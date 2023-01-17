@@ -10,30 +10,31 @@ import (
 
 // TwinDB is used to get Twin instances
 type TwinDB interface {
-	GetTwin(id uint32) (Twin, error)
+	Get(id uint32) (Twin, error)
+	GetByPk(pk []byte) (uint32, error)
 }
 
 // Twin is used to store a twin id and its public key
 type Twin struct {
-	id        uint32
-	publikKey []byte
+	ID        uint32
+	PublicKey []byte
 }
 
-type twinDBImpl struct {
+type twinDB struct {
 	cache *cache.Cache
 	sub   *substrate.Substrate
 }
 
 // NewTwinDB creates a new twinDBImpl instance, with a non expiring cache.
 func NewTwinDB(sub *substrate.Substrate) TwinDB {
-	return &twinDBImpl{
+	return &twinDB{
 		cache: cache.New(cache.NoExpiration, cache.NoExpiration),
 		sub:   sub,
 	}
 }
 
 // GetTwin gets Twin from cache if present. if not, gets it from substrate client and caches it.
-func (t *twinDBImpl) GetTwin(id uint32) (Twin, error) {
+func (t *twinDB) Get(id uint32) (Twin, error) {
 	cachedValue, ok := t.cache.Get(fmt.Sprint(id))
 	if ok {
 		return cachedValue.(Twin), nil
@@ -45,8 +46,8 @@ func (t *twinDBImpl) GetTwin(id uint32) (Twin, error) {
 	}
 
 	twin := Twin{
-		id:        id,
-		publikKey: substrateTwin.Account.PublicKey(),
+		ID:        id,
+		PublicKey: substrateTwin.Account.PublicKey(),
 	}
 
 	err = t.cache.Add(fmt.Sprint(id), twin, cache.DefaultExpiration)
@@ -55,4 +56,8 @@ func (t *twinDBImpl) GetTwin(id uint32) (Twin, error) {
 	}
 
 	return twin, nil
+}
+
+func (t *twinDB) GetByPk(pk []byte) (uint32, error) {
+	return t.sub.GetTwinByPubKey(pk)
 }

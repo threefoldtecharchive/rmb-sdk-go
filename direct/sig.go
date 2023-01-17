@@ -95,12 +95,12 @@ func charToSigType(prefix byte) (string, error) {
 // VerifySignature is responsible for verifying that the source produced this signature
 func VerifySignature(twinDB TwinDB, env *types.Envelope) error {
 
-	twin, err := twinDB.GetTwin(env.Source.Twin)
+	twin, err := twinDB.Get(env.Source.Twin)
 	if err != nil {
 		return errors.Wrapf(err, "could not get twin from twin id, twinID: %d", env.Source.Twin)
 	}
 
-	pk := twin.publikKey
+	pk := twin.PublicKey
 
 	sig := env.GetSignature()
 	if sig == nil {

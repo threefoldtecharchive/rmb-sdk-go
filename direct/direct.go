@@ -28,7 +28,12 @@ type directClient struct {
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, identity substrate.Identity, url string, id uint32, session string, twinDB TwinDB) (rmb.Client, error) {
+func NewClient(ctx context.Context, identity substrate.Identity, url string, session string, twinDB TwinDB) (rmb.Client, error) {
+	id, err := twinDB.GetByPk(identity.PublicKey())
+	if err != nil {
+		return nil, err
+	}
+
 	token, err := NewJWT(identity, id, session)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build authentication token")
@@ -176,17 +181,12 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return fmt.Errorf("no response received")
 	}
 
-	if response.Schema == nil || *response.Schema != rmb.DefaultSchema {
-		return fmt.Errorf("invalid schema received expected '%s'", rmb.DefaultSchema)
-	}
-
 	err = VerifySignature(d.twinDB, response)
 	if err != nil {
 		return errors.Wrap(err, "message signature verification failed")
 	}
 
 	resp := response.GetResponse()
-
 	if resp == nil {
 		return fmt.Errorf("received a non response envelope")
 	}
@@ -198,6 +198,10 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 
 	if result == nil {
 		return nil
+	}
+
+	if response.Schema == nil || *response.Schema != rmb.DefaultSchema {
+		return fmt.Errorf("invalid schema received expected '%s'", rmb.DefaultSchema)
 	}
 
 	reply := resp.GetReply()

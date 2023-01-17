@@ -129,11 +129,6 @@ func (c *redisClient) Call(ctx context.Context, twin uint32, fn string, data int
 	if err := json.Unmarshal(bytes, &ret); err != nil {
 		return errors.Wrap(err, "failed to load response message")
 	}
-
-	if ret.Schema != DefaultSchema {
-		return fmt.Errorf("received invalid schema '%s' was expecting %s", ret.Schema, DefaultSchema)
-	}
-
 	// errorred ?
 	if ret.Error != nil {
 		return errors.New(ret.Error.Message)
@@ -142,6 +137,10 @@ func (c *redisClient) Call(ctx context.Context, twin uint32, fn string, data int
 	// not expecting a result
 	if result == nil {
 		return nil
+	}
+
+	if ret.Schema != DefaultSchema {
+		return fmt.Errorf("received invalid schema '%s' was expecting %s", ret.Schema, DefaultSchema)
 	}
 
 	if len(ret.Data) == 0 {
