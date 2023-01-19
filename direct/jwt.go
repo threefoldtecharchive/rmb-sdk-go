@@ -44,7 +44,7 @@ func NewJWT(identity substrate.Identity, id uint32, session string) (string, err
 		"sub": id,
 		"sid": session,
 		"iat": time.Now().Unix(),
-		"exp": 600,
+		"exp": 60,
 	})
 
 	return token.SignedString(identity)

@@ -23,7 +23,7 @@ func app() error {
 	}
 	defer sub.Close()
 	twinDB := direct.NewTwinDB(sub)
-	client, err := direct.NewClient(context.Background(), identity, "ws://localhost:8080", "test-client", twinDB)
+	client, err := direct.NewClient(context.Background(), identity, "wss://relay.dev.grid.tf", "test-client", twinDB)
 
 	if err != nil {
 		return err

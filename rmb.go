@@ -204,7 +204,7 @@ func (m *DefaultRouter) Run(ctx context.Context) error {
 		var message Incoming
 		err = json.Unmarshal(data[1], &message)
 		if err != nil {
-			log.Err(err).Msg("failed to unmarshal message")
+			log.Error().Err(err).Msg("failed to unmarshal message")
 			continue
 		}
 
@@ -227,7 +227,14 @@ func (m *DefaultRouter) worker(ctx context.Context, jobs chan Incoming) {
 				log.Err(err).Msg("err while parsing payload reply")
 			}
 
-			requestCtx := context.WithValue(ctx, twinKeyID{}, message.TwinSrc)
+			var twinID uint32
+			if _, err := fmt.Sscanf(message.TwinSrc, "%d", &twinID); err != nil {
+				// while this should not happen, we still log and continue with the processing
+				// the twin id hence will be 0
+				log.Error().Err(err).Msg("failed to extract twin source from message!")
+			}
+
+			requestCtx := context.WithValue(ctx, twinKeyID{}, twinID)
 			requestCtx = context.WithValue(requestCtx, messageKey{}, message)
 
 			data, err := m.call(requestCtx, message.Command, bytes)

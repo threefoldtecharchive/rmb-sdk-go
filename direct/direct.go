@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ import (
 )
 
 type directClient struct {
-	source    types.Address
+	source    *types.Address
 	signer    substrate.Identity
 	con       *websocket.Conn
 	responses map[string]chan *types.Envelope
@@ -47,7 +48,8 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, ses
 
 	con, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to connect")
+		body, _ := io.ReadAll(resp.Body)
+		return nil, errors.Wrapf(err, "failed to connect (%s): %s", resp.Status, string(body))
 	}
 
 	if resp.StatusCode != http.StatusSwitchingProtocols {
@@ -55,7 +57,7 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, ses
 	}
 
 	cl := &directClient{
-		source:    source,
+		source:    &source,
 		signer:    identity,
 		con:       con,
 		responses: make(map[string]chan *types.Envelope),
@@ -112,7 +114,7 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 		Uid:         uuid.NewString(),
 		Timestamp:   uint64(time.Now().Unix()),
 		Expiration:  ttl,
-		Source:      &d.source,
+		Source:      d.source,
 		Destination: &types.Address{Twin: dest},
 		Schema:      &schema,
 	}
