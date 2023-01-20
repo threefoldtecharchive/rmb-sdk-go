@@ -35,7 +35,7 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, ses
 		return nil, err
 	}
 
-	token, err := NewJWT(identity, id, session)
+	token, err := NewJWT(identity, id, session, 60) // use 1 min token ttl
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build authentication token")
 	}
