@@ -33,9 +33,12 @@ func TestSignature(t *testing.T) {
 	env.Message = &types.Envelope_Request{
 		Request: &types.Request{
 			Command: "cmd",
-			Data:    []byte("data"),
 		},
 	}
+	env.Payload = &types.Envelope_Plain{
+		Plain: []byte("my data"),
+	}
+
 	t.Run("valid signature", func(t *testing.T) {
 
 		ctrl := gomock.NewController(t)

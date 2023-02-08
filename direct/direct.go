@@ -122,8 +122,11 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 	env.Message = &types.Envelope_Request{
 		Request: &types.Request{
 			Command: cmd,
-			Data:    data,
 		},
+	}
+
+	env.Payload = &types.Envelope_Plain{
+		Plain: data,
 	}
 
 	toSign, err := Challenge(&env)
@@ -188,14 +191,15 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return errors.Wrap(err, "message signature verification failed")
 	}
 
+	errResp := response.GetError()
+	if errResp != nil {
+		// todo: include code also
+		return fmt.Errorf(errResp.Message)
+	}
+
 	resp := response.GetResponse()
 	if resp == nil {
 		return fmt.Errorf("received a non response envelope")
-	}
-	errResp := resp.GetError()
-	if errResp != nil {
-		// include code also
-		return fmt.Errorf(errResp.Message)
 	}
 
 	if result == nil {
@@ -206,7 +210,15 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return fmt.Errorf("invalid schema received expected '%s'", rmb.DefaultSchema)
 	}
 
-	reply := resp.GetReply()
+	var output []byte
+	switch payload := response.Payload.(type) {
+	case *types.Envelope_Cipher:
+		// TODO: implement handler for cipher data
+		// we need then to decrypt the data
+		return fmt.Errorf("(not implemented) encrypted payload is not supported yet")
+	case *types.Envelope_Plain:
+		output = payload.Plain
+	}
 
-	return json.Unmarshal(reply.Data, &result)
+	return json.Unmarshal(output, &result)
 }
