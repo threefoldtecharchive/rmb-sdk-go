@@ -43,10 +43,45 @@ func challenge(w io.Writer, env *types.Envelope) error {
 		return err
 	}
 
+	var err error
 	if request := env.GetRequest(); request != nil {
-		return challengeRequest(w, request)
+		err = challengeRequest(w, request)
 	} else if response := env.GetResponse(); response != nil {
-		return challengeResponse(w, response)
+		err = challengeResponse(w, response)
+	} else if envErr := env.GetError(); envErr != nil {
+		err = challengeError(w, envErr)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if env.Schema != nil {
+		if _, err := fmt.Fprintf(w, "%s", *env.Schema); err != nil {
+			return err
+		}
+	}
+
+	if env.Federation != nil {
+		if _, err := fmt.Fprintf(w, "%s", *env.Federation); err != nil {
+			return err
+		}
+	}
+
+	// data is always hashed as is either if it's
+	// a plain data (not encrypted)
+	// or a cipher
+	var data []byte
+	if plain := env.GetPlain(); plain != nil {
+		data = plain
+	} else if cipher := env.GetCipher(); cipher != nil {
+		data = cipher
+	}
+
+	if data != nil {
+		if _, err := w.Write(data); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -70,35 +105,21 @@ func challengeRequest(w io.Writer, request *types.Request) error {
 	if _, err := fmt.Fprintf(w, "%s", request.Command); err != nil {
 		return err
 	}
-
-	n, err := w.Write(request.Data)
-	if err != nil {
-		return err
-	}
-	if len(request.Data) != n {
-		return fmt.Errorf("partial write")
-	}
 	return nil
 }
 
 func challengeResponse(w io.Writer, response *types.Response) error {
-	if errResp := response.GetError(); errResp != nil {
-		if _, err := fmt.Fprintf(w, "%d", errResp.Code); err != nil {
-			return err
-		}
+	return nil
 
-		if _, err := fmt.Fprintf(w, "%s", errResp.Message); err != nil {
-			return err
-		}
+}
 
-	} else if reply := response.GetReply(); reply != nil {
-		n, err := w.Write(reply.Data)
-		if err != nil {
-			return err
-		}
-		if len(reply.Data) != n {
-			return fmt.Errorf("partial write")
-		}
+func challengeError(w io.Writer, err *types.Error) error {
+	if _, err := fmt.Fprintf(w, "%d", err.Code); err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprintf(w, "%s", err.Message); err != nil {
+		return err
 	}
 
 	return nil

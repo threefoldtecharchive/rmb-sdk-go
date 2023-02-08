@@ -35,8 +35,10 @@ func app() error {
 	const dst = 7 // <- replace this with the twin id of where the service is running
 	// it's okay to run both the server and the client behind the same rmb-peer
 	var output float64
-	if err := client.Call(ctx, dst, "calculator.add", []float64{10, 20}, &output); err != nil {
-		return err
+	for i := 0; i < 20; i++ {
+		if err := client.Call(ctx, dst, "calculator.add", []float64{output, float64(i)}, &output); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("output: %f\n", output)
