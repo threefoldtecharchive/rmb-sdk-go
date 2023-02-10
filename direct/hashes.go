@@ -88,6 +88,9 @@ func challenge(w io.Writer, env *types.Envelope) error {
 }
 
 func challengeAddress(w io.Writer, addr *types.Address) error {
+	if addr == nil {
+		return nil
+	}
 	if _, err := fmt.Fprintf(w, "%d", addr.Twin); err != nil {
 		return err
 	}
@@ -102,6 +105,10 @@ func challengeAddress(w io.Writer, addr *types.Address) error {
 }
 
 func challengeRequest(w io.Writer, request *types.Request) error {
+	if request == nil {
+		return nil
+	}
+
 	if _, err := fmt.Fprintf(w, "%s", request.Command); err != nil {
 		return err
 	}
@@ -114,6 +121,9 @@ func challengeResponse(w io.Writer, response *types.Response) error {
 }
 
 func challengeError(w io.Writer, err *types.Error) error {
+	if err == nil {
+		return nil
+	}
 	if _, err := fmt.Fprintf(w, "%d", err.Code); err != nil {
 		return err
 	}

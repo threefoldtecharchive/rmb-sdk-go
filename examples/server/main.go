@@ -23,8 +23,9 @@ func app() error {
 		// payload is the entire request data
 		// get full request if needed
 		msg := rmb.GetRequest(ctx)
-		fmt.Println("source twin: ", msg.TwinSrc)
-		fmt.Println("message schema: ", msg.Schema)
+		if msg.Schema != rmb.DefaultSchema {
+			return nil, fmt.Errorf("expecting schema to be %s", rmb.DefaultSchema)
+		}
 
 		var numbers []float64
 

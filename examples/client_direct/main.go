@@ -19,14 +19,14 @@ func app() error {
 	subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
 	sub, err := subManager.Substrate()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to connect to substrate: %w", err)
 	}
 	defer sub.Close()
 	twinDB := direct.NewTwinDB(sub)
 	client, err := direct.NewClient(context.Background(), identity, "wss://relay.dev.grid.tf", "test-client", twinDB)
 
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create direct client: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

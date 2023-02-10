@@ -186,12 +186,24 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return fmt.Errorf("no response received")
 	}
 
+	errResp := response.GetError()
+	if response.Source == nil {
+		// an envelope received that has NO source twin
+		// this is possible only if the relay returned an error
+		// hence
+		if errResp != nil {
+			return fmt.Errorf(errResp.Message)
+		}
+
+		// otherwise that's a malformed message
+		return fmt.Errorf("received an invalid envelope")
+	}
+
 	err = VerifySignature(d.twinDB, response)
 	if err != nil {
 		return errors.Wrap(err, "message signature verification failed")
 	}
 
-	errResp := response.GetError()
 	if errResp != nil {
 		// todo: include code also
 		return fmt.Errorf(errResp.Message)
