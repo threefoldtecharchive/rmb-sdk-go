@@ -48,8 +48,13 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, ses
 
 	con, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	if err != nil {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, errors.Wrapf(err, "failed to connect (%s): %s", resp.Status, string(body))
+		var body []byte
+		var status string
+		if resp != nil {
+			status = resp.Status
+			body, _ = io.ReadAll(resp.Body)
+		}
+		return nil, errors.Wrapf(err, "failed to connect (%s): %s", status, string(body))
 	}
 
 	if resp.StatusCode != http.StatusSwitchingProtocols {
