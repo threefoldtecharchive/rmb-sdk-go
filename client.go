@@ -124,7 +124,8 @@ func (c *redisClient) Call(ctx context.Context, twin uint32, fn string, data int
 		break
 	}
 
-	var ret Response
+	var ret IncomingResponse
+
 	// we have a response, so load or fail
 	if err := json.Unmarshal(bytes, &ret); err != nil {
 		return errors.Wrap(err, "failed to load response message")

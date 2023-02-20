@@ -239,7 +239,7 @@ func (m *DefaultRouter) worker(ctx context.Context, jobs chan Incoming) {
 
 			data, err := m.call(requestCtx, message.Command, bytes)
 
-			response := Response{
+			response := OutgoingResponse{
 				Version:   message.Version,
 				Reference: message.Reference,
 				TwinDest:  message.TwinSrc,
@@ -289,7 +289,7 @@ func GetRequest(ctx context.Context) Incoming {
 }
 
 // sendReply send a reply to the message bus with some data
-func (m *DefaultRouter) sendReply(retQueue string, message Response, data interface{}) error {
+func (m *DefaultRouter) sendReply(retQueue string, message OutgoingResponse, data interface{}) error {
 	con := m.pool.Get()
 	defer con.Close()
 

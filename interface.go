@@ -70,11 +70,21 @@ type Error struct {
 	Message string `json:"message"`
 }
 
-type Response struct {
+type OutgoingResponse struct {
 	Version   int    `json:"ver"`
 	Reference string `json:"ref"`
 	Data      string `json:"dat"`
 	TwinDest  string `json:"dst"`
+	Schema    string `json:"shm"`
+	Epoch     int64  `json:"now"`
+	Error     *Error `json:"err,omitempty"`
+}
+
+type IncomingResponse struct {
+	Version   int    `json:"ver"`
+	Reference string `json:"ref"`
+	Data      string `json:"dat"`
+	TwinSrc   string `json:"src"`
 	Schema    string `json:"shm"`
 	Epoch     int64  `json:"now"`
 	Error     *Error `json:"err,omitempty"`
