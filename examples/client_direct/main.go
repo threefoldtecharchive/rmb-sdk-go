@@ -12,8 +12,8 @@ import (
 )
 
 func app() error {
-
-	identity, err := substrate.NewIdentityFromEd25519Phrase("<menmonics goes here>")
+	mnemonics := "<menmonics goes here>"
+	identity, err := substrate.NewIdentityFromSr25519Phrase(mnemonics)
 	if err != nil {
 		return err
 	}
