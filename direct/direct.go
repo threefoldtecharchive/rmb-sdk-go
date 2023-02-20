@@ -137,7 +137,9 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get twin for {}", dest)
 	}
-	env.Federation = &twin.Relay
+
+	env.Federation = twin.Relay
+
 	toSign, err := Challenge(&env)
 	if err != nil {
 		return nil, err
