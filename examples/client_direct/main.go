@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/threefoldtech/rmb-sdk-go/direct"
 	"github.com/threefoldtech/substrate-client"
 )
@@ -16,6 +17,10 @@ func app() error {
 	if err != nil {
 		return err
 	}
+	sk, err := direct.GenerateSecureKey(mnemonics)
+	if err != nil {
+		return errors.Wrapf(err, "could not generate secure key")
+	}
 	subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
 	sub, err := subManager.Substrate()
 	if err != nil {
@@ -23,8 +28,7 @@ func app() error {
 	}
 	defer sub.Close()
 	twinDB := direct.NewTwinDB(sub)
-	client, err := direct.NewClient(context.Background(), identity, "wss://relay.dev.grid.tf", "test-client", twinDB)
-
+	client, err := direct.NewClient(context.Background(), identity, "wss://457f-197-63-218-127.eu.ngrok.io", "test-client", twinDB, sk)
 	if err != nil {
 		return fmt.Errorf("failed to create direct client: %w", err)
 	}

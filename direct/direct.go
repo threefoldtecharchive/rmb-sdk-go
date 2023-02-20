@@ -2,6 +2,10 @@ package direct
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
@@ -16,6 +21,7 @@ import (
 	"github.com/threefoldtech/rmb-sdk-go"
 	"github.com/threefoldtech/rmb-sdk-go/direct/types"
 	"github.com/threefoldtech/substrate-client"
+	"github.com/tyler-smith/go-bip39"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,13 +32,24 @@ type directClient struct {
 	responses map[string]chan *types.Envelope
 	m         sync.Mutex
 	twinDB    TwinDB
+	privKey   *secp256k1.PrivateKey
+}
+
+func GenerateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
+	seed, err := bip39.NewSeedWithErrorChecking(mnemonics, "")
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to decode mnemonics")
+	}
+	priv := secp256k1.PrivKeyFromBytes(seed[:32])
+	return priv, nil
+
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, identity substrate.Identity, url string, session string, twinDB TwinDB) (rmb.Client, error) {
+func NewClient(ctx context.Context, identity substrate.Identity, url string, session string, twinDB TwinDB, privKey *secp256k1.PrivateKey) (rmb.Client, error) {
 	id, err := twinDB.GetByPk(identity.PublicKey())
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "failed to get twin by public key")
 	}
 
 	token, err := NewJWT(identity, id, session, 60) // use 1 min token ttl
@@ -67,6 +84,7 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, ses
 		con:       con,
 		responses: make(map[string]chan *types.Envelope),
 		twinDB:    twinDB,
+		privKey:   privKey,
 	}
 
 	go cl.process()
@@ -112,6 +130,65 @@ func (d *directClient) router(env *types.Envelope) {
 	}
 }
 
+func newAEAD(key []byte) (cipher.AEAD, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	return cipher.NewGCM(block)
+}
+
+func generateNonce(size int) []byte {
+	nonce := make([]byte, size)
+	rand.Read(nonce)
+	return nonce
+}
+
+func (d *directClient) generateSharedSect(pubkey *secp256k1.PublicKey) [32]byte {
+	point := secp256k1.GenerateSharedSecret(d.privKey, pubkey)
+	return sha256.Sum256(point)
+}
+func (d *directClient) encrypt(data []byte, pubKey []byte) ([]byte, error) {
+	secPubKey, err := secp256k1.ParsePubKey(pubKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not parse dest public key")
+	}
+	sharedSecret := d.generateSharedSect(secPubKey)
+	// Using ECDHE, derive a shared symmetric key for encryption of the plaintext.
+	aead, err := newAEAD(sharedSecret[:])
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create AEAD {}")
+	}
+
+	nonce := generateNonce(aead.NonceSize())
+	cipherText := make([]byte, len(nonce))
+	copy(cipherText, nonce)
+	cipherText = aead.Seal(cipherText, nonce, data, nil)
+	return cipherText, nil
+}
+
+func (d *directClient) decrypt(data []byte, pubKey []byte) ([]byte, error) {
+	secPubKey, err := secp256k1.ParsePubKey(pubKey)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not parse dest public key")
+	}
+	sharedSecret := d.generateSharedSect(secPubKey)
+	aead, err := newAEAD(sharedSecret[:])
+	if err != nil {
+		errors.Wrap(err, "failed to create AEAD {}")
+	}
+	if len(data) < aead.NonceSize() {
+		return nil, errors.Errorf("Invalid cipher")
+	}
+	nonce := data[:aead.NonceSize()]
+
+	decrypted, err := aead.Open(nil, nonce, data[aead.NonceSize():], nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "could not decrypt message")
+	}
+	return decrypted, nil
+}
+
 func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uint64) (*types.Envelope, error) {
 	schema := rmb.DefaultSchema
 
@@ -130,15 +207,28 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 		},
 	}
 
-	env.Payload = &types.Envelope_Plain{
-		Plain: data,
-	}
-	twin, err := d.twinDB.Get(dest)
+	destTwin, err := d.twinDB.Get(dest)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get twin for {}", dest)
 	}
 
-	env.Federation = twin.Relay
+	if len(destTwin.E2EKey) > 0 {
+		// destination public key is set, use e2e
+		cipher, err := d.encrypt(data, destTwin.E2EKey)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not encrypt data")
+		}
+		env.Payload = &types.Envelope_Cipher{
+			Cipher: cipher,
+		}
+
+	} else {
+		env.Payload = &types.Envelope_Plain{
+			Plain: data,
+		}
+	}
+
+	env.Federation = destTwin.Relay
 
 	toSign, err := Challenge(&env)
 	if err != nil {
@@ -236,9 +326,14 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 	var output []byte
 	switch payload := response.Payload.(type) {
 	case *types.Envelope_Cipher:
-		// TODO: implement handler for cipher data
-		// we need then to decrypt the data
-		return fmt.Errorf("(not implemented) encrypted payload is not supported yet")
+		twin, err := d.twinDB.Get(response.Source.Twin)
+		if err != nil {
+			return errors.Wrapf(err, "failed to get twin object for {}", response.Source.Twin)
+		}
+		output, err = d.decrypt(payload.Cipher, twin.E2EKey)
+		if err != nil {
+			return errors.Wrap(err, "could not decrypt payload")
+		}
 	case *types.Envelope_Plain:
 		output = payload.Plain
 	}
