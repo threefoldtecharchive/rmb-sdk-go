@@ -133,6 +133,12 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 	env.Payload = &types.Envelope_Plain{
 		Plain: data,
 	}
+	twin, err := d.twinDB.Get(dest)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get twin for {}", dest)
+	}
+
+	env.Federation = twin.Relay
 
 	toSign, err := Challenge(&env)
 	if err != nil {

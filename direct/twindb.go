@@ -18,6 +18,7 @@ type TwinDB interface {
 type Twin struct {
 	ID        uint32
 	PublicKey []byte
+	Relay     *string
 }
 
 type twinDB struct {
@@ -45,9 +46,16 @@ func (t *twinDB) Get(id uint32) (Twin, error) {
 		return Twin{}, errors.Wrapf(err, "could net get twin with id %d", id)
 	}
 
+	var relay *string
+
+	if substrateTwin.Relay.HasValue {
+		relay = &substrateTwin.Relay.AsValue
+	}
+
 	twin := Twin{
 		ID:        id,
 		PublicKey: substrateTwin.Account.PublicKey(),
+		Relay:     relay,
 	}
 
 	err = t.cache.Add(fmt.Sprint(id), twin, cache.DefaultExpiration)
