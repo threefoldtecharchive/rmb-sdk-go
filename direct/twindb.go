@@ -45,14 +45,10 @@ func (t *twinDB) Get(id uint32) (Twin, error) {
 	if err != nil {
 		return Twin{}, errors.Wrapf(err, "could net get twin with id %d", id)
 	}
-	relay := ""
-	if substrateTwin.Relay.HasValue {
-		relay = substrateTwin.Relay.AsValue
-	}
 	twin := Twin{
 		ID:        id,
 		PublicKey: substrateTwin.Account.PublicKey(),
-		Relay:     relay,
+		Relay:     substrateTwin.Relay.AsValue,
 	}
 
 	err = t.cache.Add(fmt.Sprint(id), twin, cache.DefaultExpiration)
