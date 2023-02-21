@@ -1,6 +1,7 @@
 package direct
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -25,6 +27,11 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const (
+	KeyTypeEd25519 = "ed25519"
+	KeyTypeSr25519 = "sr25519"
+)
+
 type directClient struct {
 	source    *types.Address
 	signer    substrate.Identity
@@ -35,7 +42,7 @@ type directClient struct {
 	privKey   *secp256k1.PrivateKey
 }
 
-func GenerateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
+func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
 	seed, err := bip39.NewSeedWithErrorChecking(mnemonics, "")
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decode mnemonics")
@@ -45,11 +52,57 @@ func GenerateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
 
 }
 
+func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
+	var identity substrate.Identity
+	var err error
+
+	switch keytype {
+	case KeyTypeEd25519:
+		identity, err = substrate.NewIdentityFromEd25519Phrase(mnemonics)
+	case KeyTypeSr25519:
+		identity, err = substrate.NewIdentityFromSr25519Phrase(mnemonics)
+	default:
+		return nil, fmt.Errorf("invalid key type %s, should be one of %s or %s ", keytype, KeyTypeEd25519, KeyTypeSr25519)
+	}
+
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create identity")
+	}
+	return identity, nil
+}
+
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, identity substrate.Identity, url string, session string, twinDB TwinDB, privKey *secp256k1.PrivateKey) (rmb.Client, error) {
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayUrl string, session string, sub *substrate.Substrate) (rmb.Client, error) {
+
+	identity, err := getIdentity(keytype, mnemonics)
+	if err != nil {
+		return nil, err
+	}
+
+	privKey, err := generateSecureKey(mnemonics)
+	if err != nil {
+		return nil, errors.Wrapf(err, "could not generate secure key")
+	}
+
+	twinDB := NewTwinDB(sub)
 	id, err := twinDB.GetByPk(identity.PublicKey())
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get twin by public key")
+	}
+
+	twin, err := twinDB.Get(id)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get twin id: ", id)
+	}
+
+	url, err := url.Parse(relayUrl)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse url: ", relayUrl)
+	}
+
+	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || url.Hostname() != *twin.Relay {
+		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
+		sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed())
 	}
 
 	token, err := NewJWT(identity, id, session, 60) // use 1 min token ttl
@@ -57,13 +110,13 @@ func NewClient(ctx context.Context, identity substrate.Identity, url string, ses
 		return nil, errors.Wrap(err, "failed to build authentication token")
 	}
 	// wss://relay.dev.grid.tf/?<JWT>
-	url = fmt.Sprintf("%s?%s", url, token)
+	relayUrl = fmt.Sprintf("%s?%s", relayUrl, token)
 	source := types.Address{
 		Twin:       id,
 		Connection: &session,
 	}
 
-	con, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	con, resp, err := websocket.DefaultDialer.Dial(relayUrl, nil)
 	if err != nil {
 		var body []byte
 		var status string
@@ -330,6 +383,10 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		if err != nil {
 			return errors.Wrapf(err, "failed to get twin object for {}", response.Source.Twin)
 		}
+		if len(twin.E2EKey) == 0 {
+			return errors.Wrap(err, "bad twin pk")
+		}
+		fmt.Println(twin.E2EKey)
 		output, err = d.decrypt(payload.Cipher, twin.E2EKey)
 		if err != nil {
 			return errors.Wrap(err, "could not decrypt payload")
