@@ -72,7 +72,7 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, keytype string, mnemonics string, relayUrl string, session string, sub *substrate.Substrate) (rmb.Client, error) {
+func NewClient(keytype string, mnemonics string, relayUrl string, session string, sub *substrate.Substrate) (rmb.Client, error) {
 
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
