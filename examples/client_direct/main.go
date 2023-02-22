@@ -11,20 +11,15 @@ import (
 )
 
 func app() error {
-
-	identity, err := substrate.NewIdentityFromEd25519Phrase("<menmonics goes here>")
-	if err != nil {
-		return err
-	}
+	mnemonics := "<mnemonics goes here>"
 	subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
 	sub, err := subManager.Substrate()
 	if err != nil {
 		return fmt.Errorf("failed to connect to substrate: %w", err)
 	}
-	defer sub.Close()
-	twinDB := direct.NewTwinDB(sub)
-	client, err := direct.NewClient(context.Background(), identity, "wss://relay.dev.grid.tf", "test-client", twinDB)
 
+	defer sub.Close()
+	client, err := direct.NewClient(direct.KeyTypeSr25519, mnemonics, "wss://relay.dev.grid.tf", "test-client", sub)
 	if err != nil {
 		return fmt.Errorf("failed to create direct client: %w", err)
 	}

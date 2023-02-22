@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/ChainSafe/go-schnorrkel v1.0.0
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0
 	github.com/golang-jwt/jwt v3.2.2+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.8.9
@@ -15,6 +16,7 @@ require (
 	github.com/rs/zerolog v1.28.0
 	github.com/stretchr/testify v1.7.0
 	github.com/threefoldtech/substrate-client v0.0.0-20230203145052-45be626d311b
+	github.com/tyler-smith/go-bip39 v1.1.0
 	google.golang.org/protobuf v1.23.0
 )
 

@@ -19,6 +19,7 @@ type Twin struct {
 	ID        uint32
 	PublicKey []byte
 	Relay     *string
+	E2EKey    []byte
 }
 
 type twinDB struct {
@@ -52,10 +53,12 @@ func (t *twinDB) Get(id uint32) (Twin, error) {
 		relay = &substrateTwin.Relay.AsValue
 	}
 
+	_, PK := substrateTwin.Pk.Unwrap()
 	twin := Twin{
 		ID:        id,
 		PublicKey: substrateTwin.Account.PublicKey(),
 		Relay:     relay,
+		E2EKey:    PK,
 	}
 
 	err = t.cache.Add(fmt.Sprint(id), twin, cache.DefaultExpiration)
