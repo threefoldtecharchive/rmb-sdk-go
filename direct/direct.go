@@ -100,7 +100,7 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 		return nil, errors.Wrapf(err, "failed to parse url: ", relayUrl)
 	}
 
-	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || url.Hostname() != *twin.Relay {
+	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
 		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
 		sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed())
 	}
