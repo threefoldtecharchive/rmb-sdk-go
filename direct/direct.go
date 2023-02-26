@@ -325,9 +325,11 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return err
 	}
 
+	d.m.Lock()
 	if err := d.con.WriteMessage(websocket.BinaryMessage, bytes); err != nil {
 		return err
 	}
+	d.m.Unlock()
 
 	var response *types.Envelope
 	select {
