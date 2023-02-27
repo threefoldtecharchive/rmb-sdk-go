@@ -36,8 +36,9 @@ type directClient struct {
 	source    *types.Address
 	signer    substrate.Identity
 	con       *websocket.Conn
+	conM      sync.Mutex
 	responses map[string]chan *types.Envelope
-	m         sync.Mutex
+	respM     sync.Mutex
 	twinDB    TwinDB
 	privKey   *secp256k1.PrivateKey
 }
@@ -168,8 +169,8 @@ func (d *directClient) process() {
 }
 
 func (d *directClient) router(env *types.Envelope) {
-	d.m.Lock()
-	defer d.m.Unlock()
+	d.respM.Lock()
+	defer d.respM.Unlock()
 
 	ch, ok := d.responses[env.Uid]
 	if !ok {
@@ -316,18 +317,20 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 	}
 
 	ch := make(chan *types.Envelope)
-	d.m.Lock()
+	d.respM.Lock()
 	d.responses[request.Uid] = ch
-	d.m.Unlock()
+	d.respM.Unlock()
 
 	bytes, err := proto.Marshal(request)
 	if err != nil {
 		return err
 	}
 
+	d.conM.Lock()
 	if err := d.con.WriteMessage(websocket.BinaryMessage, bytes); err != nil {
 		return err
 	}
+	d.conM.Unlock()
 
 	var response *types.Envelope
 	select {
