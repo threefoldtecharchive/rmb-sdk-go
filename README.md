@@ -1,6 +1,7 @@
 [![Go Documentation](https://godocs.io/github.com/threefoldtech/rmb-sdk-go?status.svg)](https://godocs.io/github.com/threefoldtech/rmb-sdk-go)
 
 # Introduction
+
 This is a `GO` sdk that can be used to build both **services**, and **clients**
 that can talk over the `rmb`.
 
@@ -10,23 +11,45 @@ and reliable `RPC` calls across the globe.
 `RMB` itself does not implement an RPC protocol, but just the secure and reliable messaging
 hence it's up to server and client to implement their own data format.
 
-## Pre Requirements
-You need to run an `rmb-peer` locally. The `peer` instance establishes a connection to the `rmb-relay` to and works
-as a gateway for all services and client behind it.
+## How it works
 
-In another terminal run
-```bash
-rmb-peer -m "<mnemonics>"
+If two processes needed to communicate over `RMB`, they both need to have some sort of a connection to an `rmb-relay`.\
+This connection could be established using a `direct-client`, or an `rmb-peer`.
+
+### Direct client
+
+A process could connect to an `rmb-relay` using a direct client.\
+To create a new direct client instance, a process needs to have:
+
+- A valid mnemonics, with an activated account on the TFChain.
+- The key type of these mnemonics.
+- A relay URL that the direct client will connect to.
+- A session id. This could be anything, but a twin must only have a unique session id per connection.
+- A substrate connection.
+
+#### **Example**
+
+Creating a new direct client instance:
+
+```Go
+subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
+sub, err := subManager.Substrate()
+if err != nil {
+    return fmt.Errorf("failed to connect to substrate: %w", err)
+}
+
+defer sub.Close()
+client, err := direct.NewClient(direct.KeyTypeSr25519, mnemonics, "wss://relay.dev.grid.tf", "test-client", sub)
+if err != nil {
+    return fmt.Errorf("failed to create direct client: %w", err)
+}
 ```
-> Can be added to the system service with systemd so it can be running all the time
 
-> run `rmb-peer -h` to customize the peer, including which relay and which tfchain to connect to.
+Assuming there is a remote calculator process that could add two integers, an rmb call using the direct client would look like this:
 
-# Example
-Please check the example directory for code examples
-- [server](examples/server/main.go)
-- [client](examples/client/main.go)
-
-### Direct Client
-There is a `direct` client that does not require `rmb-peer` and can connect directly to the rmb `relay`. This client is defined under
-[direct](direct)
+```Go
+x := 1
+y := 2
+var sum int
+err := client.Call(ctx, destinationTwinID, "calculator.add", []int{x, y}, &sum)
+```
