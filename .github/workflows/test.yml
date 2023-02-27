@@ -1,7 +1,7 @@
 # This GitHub action runs your tests for each commit push and/or PR. Optionally
 # you can turn it on using a cron schedule for regular testing.
 #
-name: Tests
+name: Lint and Test
 on:
   pull_request:
     paths-ignore:
@@ -11,8 +11,8 @@ on:
       - "README.md"
 
 jobs:
-  unittests:
-    name: Unit Test
+  lint_and_test:
+    name: lint and test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -23,9 +23,17 @@ jobs:
         id: go
 
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v3.2.0
+        uses: actions/checkout@v3.3.0
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
         with:
-          submodules: "true"
+          args: --timeout 3m --verbose
+
+      - name: gofmt
+        uses: Jerome1337/gofmt-action@v1.0.5
+        with:
+          gofmt-flags: "-l -d"
 
       - name: Get dependencies
         run: |

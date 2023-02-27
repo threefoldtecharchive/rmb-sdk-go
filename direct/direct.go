@@ -102,8 +102,7 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 
 	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
 		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
-		_, err = sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed())
-		if err != nil {
+		if _, err = sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed()); err != nil {
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
