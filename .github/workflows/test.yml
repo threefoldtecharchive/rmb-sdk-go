@@ -13,7 +13,6 @@ on:
 jobs:
   unittests:
     name: Unit Test
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
