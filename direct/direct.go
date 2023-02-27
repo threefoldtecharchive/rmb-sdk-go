@@ -33,13 +33,14 @@ const (
 )
 
 type directClient struct {
-	source    *types.Address
-	signer    substrate.Identity
-	con       *websocket.Conn
-	responses map[string]chan *types.Envelope
-	m         sync.Mutex
-	twinDB    TwinDB
-	privKey   *secp256k1.PrivateKey
+	source       *types.Address
+	signer       substrate.Identity
+	con          *websocket.Conn
+	conWriteLock sync.Mutex
+	responses    map[string]chan *types.Envelope
+	m            sync.Mutex
+	twinDB       TwinDB
+	privKey      *secp256k1.PrivateKey
 }
 
 func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
@@ -325,11 +326,11 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return err
 	}
 
-	d.m.Lock()
+	d.conWriteLock.Lock()
 	if err := d.con.WriteMessage(websocket.BinaryMessage, bytes); err != nil {
 		return err
 	}
-	d.m.Unlock()
+	d.conWriteLock.Unlock()
 
 	var response *types.Envelope
 	select {
