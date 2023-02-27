@@ -389,7 +389,6 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		if len(twin.E2EKey) == 0 {
 			return errors.Wrap(err, "bad twin pk")
 		}
-		fmt.Println(twin.E2EKey)
 		output, err = d.decrypt(payload.Cipher, twin.E2EKey)
 		if err != nil {
 			return errors.Wrap(err, "could not decrypt payload")
