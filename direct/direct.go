@@ -93,17 +93,19 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 
 	twin, err := twinDB.Get(id)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get twin id: ", id)
+		return nil, errors.Wrapf(err, "failed to get twin id: %d", id)
 	}
 
 	url, err := url.Parse(relayUrl)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse url: ", relayUrl)
+		return nil, errors.Wrapf(err, "failed to parse url: %s", relayUrl)
 	}
 
 	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
 		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
-		sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed())
+		if _, err = sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed()); err != nil {
+			return nil, errors.Wrap(err, "could not update twin relay information")
+		}
 	}
 
 	token, err := NewJWT(identity, id, session, 60) // use 1 min token ttl
@@ -192,10 +194,14 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-func generateNonce(size int) []byte {
+func generateNonce(size int) ([]byte, error) {
 	nonce := make([]byte, size)
-	rand.Read(nonce)
-	return nonce
+	_, err := rand.Read(nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	return nonce, nil
 }
 
 func (d *directClient) generateSharedSect(pubkey *secp256k1.PublicKey) [32]byte {
@@ -214,7 +220,10 @@ func (d *directClient) encrypt(data []byte, pubKey []byte) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to create AEAD {}")
 	}
 
-	nonce := generateNonce(aead.NonceSize())
+	nonce, err := generateNonce(aead.NonceSize())
+	if err != nil {
+		return nil, errors.Wrap(err, "could not generate nonce")
+	}
 	cipherText := make([]byte, len(nonce))
 	copy(cipherText, nonce)
 	cipherText = aead.Seal(cipherText, nonce, data, nil)
@@ -229,7 +238,7 @@ func (d *directClient) decrypt(data []byte, pubKey []byte) ([]byte, error) {
 	sharedSecret := d.generateSharedSect(secPubKey)
 	aead, err := newAEAD(sharedSecret[:])
 	if err != nil {
-		errors.Wrap(err, "failed to create AEAD {}")
+		return nil, errors.Wrap(err, "failed to create AEAD")
 	}
 	if len(data) < aead.NonceSize() {
 		return nil, errors.Errorf("Invalid cipher")
@@ -263,7 +272,7 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 
 	destTwin, err := d.twinDB.Get(dest)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get twin for {}", dest)
+		return nil, errors.Wrapf(err, "failed to get twin for %d", dest)
 	}
 
 	if len(destTwin.E2EKey) > 0 {
@@ -384,7 +393,7 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 	case *types.Envelope_Cipher:
 		twin, err := d.twinDB.Get(response.Source.Twin)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get twin object for {}", response.Source.Twin)
+			return errors.Wrapf(err, "failed to get twin object for %d", response.Source.Twin)
 		}
 		if len(twin.E2EKey) == 0 {
 			return errors.Wrap(err, "bad twin pk")
