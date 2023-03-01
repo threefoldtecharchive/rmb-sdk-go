@@ -144,7 +144,26 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 	}
 
 	go cl.process()
+	go cl.ping()
 	return cl, nil
+}
+
+func (d *directClient) ping() {
+	ticker := time.NewTicker(20 * time.Second)
+	for i := 0; i < 3; i++ {
+		for {
+			d.conM.Lock()
+			err := d.con.WriteMessage(websocket.PingMessage, []byte{})
+			if err != nil {
+				log.Error().Err(err).Msg("ping message failed")
+				break
+			}
+			d.conM.Unlock()
+			i = 0
+			<-ticker.C
+		}
+	}
+	log.Error().Msg("websocket connection error. please reconnect")
 }
 
 func (d *directClient) process() {
