@@ -114,6 +114,8 @@ func (c *InnerConnection) Start(ctx context.Context) (Reader, Writer) {
 	input := make(chan []byte)
 
 	go func() {
+		defer close(output)
+		defer close(input)
 		for {
 			con, err := c.connect()
 			if err != nil {

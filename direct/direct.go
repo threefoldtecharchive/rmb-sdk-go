@@ -30,10 +30,8 @@ const (
 )
 
 type directClient struct {
-	source *types.Address
-	signer substrate.Identity
-	// con         *websocket.Conn
-	// conM        sync.Mutex
+	source    *types.Address
+	signer    substrate.Identity
 	responses map[string]chan *types.Envelope
 	respM     sync.Mutex
 	twinDB    TwinDB
@@ -73,7 +71,7 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(ctx context.Context, keytype string, mnemonics string, relayDomain string, session string, sub *substrate.Substrate) (rmb.Client, error) {
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (rmb.Client, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
 		return nil, err
@@ -95,9 +93,9 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayDomai
 		return nil, errors.Wrapf(err, "failed to get twin id: %d", id)
 	}
 
-	url, err := url.Parse(relayDomain)
+	url, err := url.Parse(relayURL)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse url: %s", relayDomain)
+		return nil, errors.Wrapf(err, "failed to parse url: %s", relayURL)
 	}
 
 	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
@@ -106,7 +104,7 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayDomai
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
-	conn := NewConnection(identity, relayDomain, session, twin.ID)
+	conn := NewConnection(identity, relayURL, session, twin.ID)
 
 	reader, writer := conn.Start(ctx)
 	source := types.Address{
@@ -128,11 +126,7 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayDomai
 	return cl, nil
 }
 func (d *directClient) process() {
-	// defer d.connection.con.Close()
-	// todo: set error on connection here
-	for {
-		incoming := <-d.reader
-
+	for incoming := range d.reader {
 		var env types.Envelope
 		if err := proto.Unmarshal(incoming, &env); err != nil {
 			log.Error().Err(err).Msg("invalid message payload")
