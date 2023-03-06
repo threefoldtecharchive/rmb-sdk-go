@@ -9,15 +9,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"sync"
 	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/rmb-sdk-go"
@@ -35,12 +32,13 @@ const (
 type directClient struct {
 	source    *types.Address
 	signer    substrate.Identity
-	con       *websocket.Conn
-	conM      sync.Mutex
 	responses map[string]chan *types.Envelope
 	respM     sync.Mutex
 	twinDB    TwinDB
 	privKey   *secp256k1.PrivateKey
+
+	reader Reader
+	writer Writer
 }
 
 func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
@@ -72,9 +70,13 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 	return identity, nil
 }
 
-// id is the twin id that is associated with the given identity.
-func NewClient(keytype string, mnemonics string, relayUrl string, session string, sub *substrate.Substrate) (rmb.Client, error) {
-
+// NewClient creates a new RMB direct client. It connects directly to the RMB-Relay, and peridically tries to reconnect if the connection broke.
+//
+// You can close the connection by canceling the passed context.
+//
+// Make sure the context passed to Call() does not outlive the directClient's context.
+// Call() will panic if called while the directClient's context is canceled.
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (rmb.Client, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
 		return nil, err
@@ -96,9 +98,9 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 		return nil, errors.Wrapf(err, "failed to get twin id: %d", id)
 	}
 
-	url, err := url.Parse(relayUrl)
+	url, err := url.Parse(relayURL)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse url: %s", relayUrl)
+		return nil, errors.Wrapf(err, "failed to parse url: %s", relayURL)
 	}
 
 	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
@@ -107,65 +109,34 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
+	conn := NewConnection(identity, relayURL, session, twin.ID)
 
-	token, err := NewJWT(identity, id, session, 60) // use 1 min token ttl
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to build authentication token")
-	}
-	// wss://relay.dev.grid.tf/?<JWT>
-	relayUrl = fmt.Sprintf("%s?%s", relayUrl, token)
+	reader, writer := conn.Start(ctx)
 	source := types.Address{
 		Twin:       id,
 		Connection: &session,
 	}
 
-	con, resp, err := websocket.DefaultDialer.Dial(relayUrl, nil)
-	if err != nil {
-		var body []byte
-		var status string
-		if resp != nil {
-			status = resp.Status
-			body, _ = io.ReadAll(resp.Body)
-		}
-		return nil, errors.Wrapf(err, "failed to connect (%s): %s", status, string(body))
-	}
-
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		return nil, fmt.Errorf("invalid response %s", resp.Status)
-	}
-
 	cl := &directClient{
 		source:    &source,
 		signer:    identity,
-		con:       con,
 		responses: make(map[string]chan *types.Envelope),
 		twinDB:    twinDB,
 		privKey:   privKey,
+		reader:    reader,
+		writer:    writer,
 	}
-
 	go cl.process()
+
 	return cl, nil
 }
-
 func (d *directClient) process() {
-	defer d.con.Close()
-	// todo: set error on connection here
-	for {
-		typ, msg, err := d.con.ReadMessage()
-		if err != nil {
-			log.Error().Err(err).Msg("websocket error connection closed")
-			return
-		}
-		if typ != websocket.BinaryMessage {
-			continue
-		}
-
+	for incoming := range d.reader {
 		var env types.Envelope
-		if err := proto.Unmarshal(msg, &env); err != nil {
+		if err := proto.Unmarshal(incoming, &env); err != nil {
 			log.Error().Err(err).Msg("invalid message payload")
 			return
 		}
-
 		d.router(&env)
 	}
 }
@@ -335,11 +306,11 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return err
 	}
 
-	d.conM.Lock()
-	if err := d.con.WriteMessage(websocket.BinaryMessage, bytes); err != nil {
-		return err
+	select {
+	case d.writer <- bytes:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
-	d.conM.Unlock()
 
 	var response *types.Envelope
 	select {
