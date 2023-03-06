@@ -13,6 +13,11 @@ import (
 	"github.com/threefoldtech/substrate-client"
 )
 
+const (
+	PongWait     = 40 * time.Second
+	PingInterval = 20 * time.Second
+)
+
 type InnerConnection struct {
 	twinID   uint32
 	session  string
@@ -41,16 +46,18 @@ func NewConnection(identity substrate.Identity, url string, session string, twin
 	}
 }
 
-func (c *InnerConnection) reader(ctx context.Context, cancel context.CancelCauseFunc, con *websocket.Conn, reader chan []byte) {
+func (c *InnerConnection) reader(ctx context.Context, cancel context.CancelFunc, con *websocket.Conn, reader chan []byte) {
 	for {
 		typ, data, err := con.ReadMessage()
 		if err != nil {
-			cancel(err)
+			log.Error().Err(err).Msg("failed to read message")
+			cancel()
 			return
 		}
 
 		if typ != websocket.BinaryMessage {
-			cancel(fmt.Errorf("invalid message type received"))
+			log.Error().Msg("invalid message type received")
+			cancel()
 			return
 		}
 
@@ -65,8 +72,8 @@ func (c *InnerConnection) reader(ctx context.Context, cancel context.CancelCause
 func (c *InnerConnection) loop(ctx context.Context, con *websocket.Conn, output, input chan []byte) error {
 	defer con.Close()
 
-	local, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
+	local, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	pong := make(chan byte)
 	con.SetPongHandler(func(appData string) error {
@@ -79,7 +86,7 @@ func (c *InnerConnection) loop(ctx context.Context, con *websocket.Conn, output,
 
 	go c.reader(local, cancel, con, output)
 
-	pongTime := time.Now()
+	lastPong := time.Now()
 	for {
 		select {
 		case <-local.Done():
@@ -89,13 +96,13 @@ func (c *InnerConnection) loop(ctx context.Context, con *websocket.Conn, output,
 				return err
 			}
 		case <-pong:
-			pongTime = time.Now()
-		case <-time.After(20 * time.Second):
+			lastPong = time.Now()
+		case <-time.After(PingInterval):
 			if err := con.WriteControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
 				return err
 			}
 
-			if time.Since(pongTime) > 60*time.Second {
+			if time.Since(lastPong) > PongWait {
 				return fmt.Errorf("connection stalling")
 			}
 		}
@@ -118,7 +125,7 @@ func (c *InnerConnection) Start(ctx context.Context) (Reader, Writer) {
 			if err == context.Canceled {
 				break
 			} else if err != nil {
-				log.Error().Err(err).Msg("failed to reconnect")
+				log.Error().Err(err)
 			}
 		}
 	}()
