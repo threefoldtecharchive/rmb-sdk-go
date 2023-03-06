@@ -15,7 +15,6 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/rmb-sdk-go"
@@ -39,9 +38,9 @@ type directClient struct {
 	respM     sync.Mutex
 	twinDB    TwinDB
 	privKey   *secp256k1.PrivateKey
-	// relayDomain string
-	// session    string
-	connection *Connection
+
+	reader Reader
+	writer Writer
 }
 
 func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
@@ -74,8 +73,7 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(keytype string, mnemonics string, relayDomain string, session string, sub *substrate.Substrate) (rmb.Client, error) {
-
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayDomain string, session string, sub *substrate.Substrate) (rmb.Client, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
 		return nil, err
@@ -108,23 +106,22 @@ func NewClient(keytype string, mnemonics string, relayDomain string, session str
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
-	conn, err := NewConnection(identity, relayDomain, session, twin.ID)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not start relay connection")
-	}
+	conn := NewConnection(identity, relayDomain, session, twin.ID)
 
+	reader, writer := conn.Start(ctx)
 	source := types.Address{
 		Twin:       id,
 		Connection: &session,
 	}
 
 	cl := &directClient{
-		source:     &source,
-		signer:     identity,
-		responses:  make(map[string]chan *types.Envelope),
-		twinDB:     twinDB,
-		privKey:    privKey,
-		connection: conn,
+		source:    &source,
+		signer:    identity,
+		responses: make(map[string]chan *types.Envelope),
+		twinDB:    twinDB,
+		privKey:   privKey,
+		reader:    reader,
+		writer:    writer,
 	}
 	go cl.process()
 
@@ -134,14 +131,10 @@ func (d *directClient) process() {
 	// defer d.connection.con.Close()
 	// todo: set error on connection here
 	for {
-		incoming := <-d.connection.incomingMessage
-
-		if incoming.messageType != websocket.BinaryMessage {
-			continue
-		}
+		incoming := <-d.reader
 
 		var env types.Envelope
-		if err := proto.Unmarshal(incoming.data, &env); err != nil {
+		if err := proto.Unmarshal(incoming, &env); err != nil {
 			log.Error().Err(err).Msg("invalid message payload")
 			return
 		}
@@ -314,10 +307,7 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return err
 	}
 
-	err = d.connection.Write(ctx, websocket.BinaryMessage, bytes)
-	if err != nil {
-		return errors.Wrap(err, "could not write message to relay")
-	}
+	d.writer.Write(bytes)
 
 	var response *types.Envelope
 	select {
