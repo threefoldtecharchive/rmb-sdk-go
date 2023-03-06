@@ -70,7 +70,12 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 	return identity, nil
 }
 
-// id is the twin id that is associated with the given identity.
+// NewClient creates a new RMB direct client. It connects directly to the RMB-Relay, and peridically tries to reconnect if the connection broke.
+//
+// You can close the connection by canceling the passed context.
+//
+// Make sure the context passed to Call() does not outlive the directClient's context.
+// Call() will panic if called while the directClient's context is canceled.
 func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (rmb.Client, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
@@ -301,7 +306,11 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return err
 	}
 
-	d.writer.Write(bytes)
+	select {
+	case d.writer <- bytes:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 
 	var response *types.Envelope
 	select {
