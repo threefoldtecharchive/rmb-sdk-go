@@ -9,8 +9,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -33,14 +31,17 @@ const (
 )
 
 type directClient struct {
-	source    *types.Address
-	signer    substrate.Identity
-	con       *websocket.Conn
-	conM      sync.Mutex
+	source *types.Address
+	signer substrate.Identity
+	// con         *websocket.Conn
+	// conM        sync.Mutex
 	responses map[string]chan *types.Envelope
 	respM     sync.Mutex
 	twinDB    TwinDB
 	privKey   *secp256k1.PrivateKey
+	// relayDomain string
+	// session    string
+	connection *Connection
 }
 
 func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
@@ -73,7 +74,7 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 }
 
 // id is the twin id that is associated with the given identity.
-func NewClient(keytype string, mnemonics string, relayUrl string, session string, sub *substrate.Substrate) (rmb.Client, error) {
+func NewClient(keytype string, mnemonics string, relayDomain string, session string, sub *substrate.Substrate) (rmb.Client, error) {
 
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
@@ -96,9 +97,9 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 		return nil, errors.Wrapf(err, "failed to get twin id: %d", id)
 	}
 
-	url, err := url.Parse(relayUrl)
+	url, err := url.Parse(relayDomain)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse url: %s", relayUrl)
+		return nil, errors.Wrapf(err, "failed to parse url: %s", relayDomain)
 	}
 
 	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
@@ -107,84 +108,43 @@ func NewClient(keytype string, mnemonics string, relayUrl string, session string
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
-
-	token, err := NewJWT(identity, id, session, 60) // use 1 min token ttl
+	conn, err := NewConnection(identity, relayDomain, session, twin.ID)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build authentication token")
+		return nil, errors.Wrap(err, "could not start relay connection")
 	}
-	// wss://relay.dev.grid.tf/?<JWT>
-	relayUrl = fmt.Sprintf("%s?%s", relayUrl, token)
+
 	source := types.Address{
 		Twin:       id,
 		Connection: &session,
 	}
 
-	con, resp, err := websocket.DefaultDialer.Dial(relayUrl, nil)
-	if err != nil {
-		var body []byte
-		var status string
-		if resp != nil {
-			status = resp.Status
-			body, _ = io.ReadAll(resp.Body)
-		}
-		return nil, errors.Wrapf(err, "failed to connect (%s): %s", status, string(body))
-	}
-
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		return nil, fmt.Errorf("invalid response %s", resp.Status)
-	}
-
 	cl := &directClient{
-		source:    &source,
-		signer:    identity,
-		con:       con,
-		responses: make(map[string]chan *types.Envelope),
-		twinDB:    twinDB,
-		privKey:   privKey,
+		source:     &source,
+		signer:     identity,
+		responses:  make(map[string]chan *types.Envelope),
+		twinDB:     twinDB,
+		privKey:    privKey,
+		connection: conn,
 	}
-
 	go cl.process()
-	go cl.ping()
+
 	return cl, nil
 }
-
-func (d *directClient) ping() {
-	ticker := time.NewTicker(20 * time.Second)
-	for i := 0; i < 3; i++ {
-		for {
-			d.conM.Lock()
-			err := d.con.WriteMessage(websocket.PingMessage, []byte{})
-			if err != nil {
-				log.Error().Err(err).Msg("ping message failed")
-				break
-			}
-			d.conM.Unlock()
-			i = 0
-			<-ticker.C
-		}
-	}
-	log.Error().Msg("websocket connection error. please reconnect")
-}
-
 func (d *directClient) process() {
-	defer d.con.Close()
+	// defer d.connection.con.Close()
 	// todo: set error on connection here
 	for {
-		typ, msg, err := d.con.ReadMessage()
-		if err != nil {
-			log.Error().Err(err).Msg("websocket error connection closed")
-			return
-		}
-		if typ != websocket.BinaryMessage {
+		incoming := <-d.connection.incomingMessage
+
+		if incoming.messageType != websocket.BinaryMessage {
 			continue
 		}
 
 		var env types.Envelope
-		if err := proto.Unmarshal(msg, &env); err != nil {
+		if err := proto.Unmarshal(incoming.data, &env); err != nil {
 			log.Error().Err(err).Msg("invalid message payload")
 			return
 		}
-
 		d.router(&env)
 	}
 }
@@ -354,11 +314,10 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return err
 	}
 
-	d.conM.Lock()
-	if err := d.con.WriteMessage(websocket.BinaryMessage, bytes); err != nil {
-		return err
+	err = d.connection.Write(ctx, websocket.BinaryMessage, bytes)
+	if err != nil {
+		return errors.Wrap(err, "could not write message to relay")
 	}
-	d.conM.Unlock()
 
 	var response *types.Envelope
 	select {
