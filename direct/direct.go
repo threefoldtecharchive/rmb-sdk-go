@@ -29,7 +29,11 @@ const (
 	KeyTypeSr25519 = "sr25519"
 )
 
-type directClient struct {
+var (
+	_ rmb.Client = (*DirectClient)(nil)
+)
+
+type DirectClient struct {
 	source    *types.Address
 	signer    substrate.Identity
 	responses map[string]chan *types.Envelope
@@ -76,7 +80,7 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 //
 // Make sure the context passed to Call() does not outlive the directClient's context.
 // Call() will panic if called while the directClient's context is canceled.
-func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (rmb.Client, error) {
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (*DirectClient, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
 		return nil, err
@@ -117,7 +121,7 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 		Connection: &session,
 	}
 
-	cl := &directClient{
+	cl := &DirectClient{
 		source:    &source,
 		signer:    identity,
 		responses: make(map[string]chan *types.Envelope),
@@ -130,7 +134,8 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 
 	return cl, nil
 }
-func (d *directClient) process() {
+
+func (d *DirectClient) process() {
 	for incoming := range d.reader {
 		var env types.Envelope
 		if err := proto.Unmarshal(incoming, &env); err != nil {
@@ -141,7 +146,7 @@ func (d *directClient) process() {
 	}
 }
 
-func (d *directClient) router(env *types.Envelope) {
+func (d *DirectClient) router(env *types.Envelope) {
 	d.respM.Lock()
 	defer d.respM.Unlock()
 
@@ -175,11 +180,12 @@ func generateNonce(size int) ([]byte, error) {
 	return nonce, nil
 }
 
-func (d *directClient) generateSharedSect(pubkey *secp256k1.PublicKey) [32]byte {
+func (d *DirectClient) generateSharedSect(pubkey *secp256k1.PublicKey) [32]byte {
 	point := secp256k1.GenerateSharedSecret(d.privKey, pubkey)
 	return sha256.Sum256(point)
 }
-func (d *directClient) encrypt(data []byte, pubKey []byte) ([]byte, error) {
+
+func (d *DirectClient) encrypt(data []byte, pubKey []byte) ([]byte, error) {
 	secPubKey, err := secp256k1.ParsePubKey(pubKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not parse dest public key")
@@ -201,7 +207,7 @@ func (d *directClient) encrypt(data []byte, pubKey []byte) ([]byte, error) {
 	return cipherText, nil
 }
 
-func (d *directClient) decrypt(data []byte, pubKey []byte) ([]byte, error) {
+func (d *DirectClient) decrypt(data []byte, pubKey []byte) ([]byte, error) {
 	secPubKey, err := secp256k1.ParsePubKey(pubKey)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not parse dest public key")
@@ -223,7 +229,7 @@ func (d *directClient) decrypt(data []byte, pubKey []byte) ([]byte, error) {
 	return decrypted, nil
 }
 
-func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uint64) (*types.Envelope, error) {
+func (d *DirectClient) makeRequest(dest uint32, cmd string, data []byte, ttl uint64) (*types.Envelope, error) {
 	schema := rmb.DefaultSchema
 
 	env := types.Envelope{
@@ -278,7 +284,39 @@ func (d *directClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 
 }
 
-func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data interface{}, result interface{}) error {
+func (d *DirectClient) request(ctx context.Context, request *types.Envelope) (*types.Envelope, error) {
+
+	ch := make(chan *types.Envelope)
+	d.respM.Lock()
+	d.responses[request.Uid] = ch
+	d.respM.Unlock()
+
+	bytes, err := proto.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case d.writer <- bytes:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	var response *types.Envelope
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case response = <-ch:
+	}
+	if response == nil {
+		// shouldn't happen but just in case
+		return nil, fmt.Errorf("no response received")
+	}
+
+	return response, nil
+}
+
+func (d *DirectClient) Call(ctx context.Context, twin uint32, fn string, data interface{}, result interface{}) error {
 
 	payload, err := json.Marshal(data)
 	if err != nil {
@@ -296,31 +334,9 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 		return errors.Wrap(err, "failed to build request")
 	}
 
-	ch := make(chan *types.Envelope)
-	d.respM.Lock()
-	d.responses[request.Uid] = ch
-	d.respM.Unlock()
-
-	bytes, err := proto.Marshal(request)
+	response, err := d.request(ctx, request)
 	if err != nil {
 		return err
-	}
-
-	select {
-	case d.writer <- bytes:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	var response *types.Envelope
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case response = <-ch:
-	}
-	if response == nil {
-		// shouldn't happen but just in case
-		return fmt.Errorf("no response received")
 	}
 
 	errResp := response.GetError()
@@ -378,4 +394,31 @@ func (d *directClient) Call(ctx context.Context, twin uint32, fn string, data in
 	}
 
 	return json.Unmarshal(output, &result)
+}
+
+// Ping sends an application level ping. You normally do not ever need to call this
+// yourself because this rmb client takes care of automatic pinging of the server
+// and reconnecting if needed. But in case you want to test if a connection is active
+// and established you can call this Ping method yourself.
+// If no error is returned then ping has succeeded.
+// Make sure to always provide a ctx with a timeout or a deadline otherwise the call
+// will block forever waiting for a response.
+func (d *DirectClient) Ping(ctx context.Context) error {
+	uid := uuid.NewString()
+	request := types.Envelope{
+		Uid:     uid,
+		Source:  d.source,
+		Message: &types.Envelope_Ping{},
+	}
+
+	response, err := d.request(ctx, &request)
+	if err != nil {
+		return err
+	}
+	_, ok := response.Message.(*types.Envelope_Pong)
+	if !ok {
+		return fmt.Errorf("expected a pong response got %T", response.Message)
+	}
+
+	return nil
 }
