@@ -34,15 +34,14 @@ var (
 )
 
 type DirectClient struct {
-	source           *types.Address
-	signer           substrate.Identity
-	responses        map[string]chan *types.Envelope
-	respM            sync.Mutex
-	twinDB           TwinDB
-	privKey          *secp256k1.PrivateKey
-	enableEncryption bool
-	reader           Reader
-	writer           Writer
+	source    *types.Address
+	signer    substrate.Identity
+	responses map[string]chan *types.Envelope
+	respM     sync.Mutex
+	twinDB    TwinDB
+	privKey   *secp256k1.PrivateKey
+	reader    Reader
+	writer    Writer
 }
 
 func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
@@ -86,11 +85,6 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 		return nil, err
 	}
 
-	privKey, err := generateSecureKey(mnemonics)
-	if err != nil {
-		return nil, errors.Wrapf(err, "could not generate secure key")
-	}
-
 	twinDB := NewTwinDB(sub)
 	id, err := twinDB.GetByPk(identity.PublicKey())
 	if err != nil {
@@ -108,7 +102,13 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 	}
 
 	var publicKey []byte
+	var privKey *secp256k1.PrivateKey
 	if enableEncryption {
+		privKey, err = generateSecureKey(mnemonics)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not generate secure key")
+
+		}
 		publicKey = privKey.PubKey().SerializeCompressed()
 	}
 
@@ -127,14 +127,13 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 	}
 
 	cl := &DirectClient{
-		source:           &source,
-		signer:           identity,
-		responses:        make(map[string]chan *types.Envelope),
-		twinDB:           twinDB,
-		privKey:          privKey,
-		enableEncryption: enableEncryption,
-		reader:           reader,
-		writer:           writer,
+		source:    &source,
+		signer:    identity,
+		responses: make(map[string]chan *types.Envelope),
+		twinDB:    twinDB,
+		privKey:   privKey,
+		reader:    reader,
+		writer:    writer,
 	}
 	go cl.process()
 
@@ -258,7 +257,7 @@ func (d *DirectClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 		return nil, errors.Wrapf(err, "failed to get twin for %d", dest)
 	}
 
-	if len(destTwin.E2EKey) > 0 && d.enableEncryption {
+	if len(destTwin.E2EKey) > 0 && d.privKey != nil {
 		// destination public key is set, use e2e
 		cipher, err := d.encrypt(data, destTwin.E2EKey)
 		if err != nil {

@@ -11,7 +11,7 @@ import (
 )
 
 func app() error {
-	mnemonics := "route visual hundred rabbit wet crunch ice castle milk model inherit outside"
+	mnemonics := "<mnemonics goes here>"
 	subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
 	sub, err := subManager.Substrate()
 	if err != nil {
