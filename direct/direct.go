@@ -1,7 +1,6 @@
 package direct
 
 import (
-	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -107,9 +106,9 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 		return nil, errors.Wrapf(err, "failed to parse url: %s", relayURL)
 	}
 
-	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
+	if twin.E2EKey != nil || twin.Relay == nil || url.Hostname() != *twin.Relay {
 		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
-		if _, err = sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed()); err != nil {
+		if _, err = sub.UpdateTwin(identity, url.Hostname(), nil); err != nil {
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
