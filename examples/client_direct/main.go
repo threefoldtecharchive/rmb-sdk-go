@@ -19,7 +19,7 @@ func app() error {
 	}
 
 	defer sub.Close()
-	client, err := direct.NewClient(context.Background(), direct.KeyTypeSr25519, mnemonics, "wss://relay.dev.grid.tf", "test-client", sub)
+	client, err := direct.NewClient(context.Background(), direct.KeyTypeSr25519, mnemonics, "wss://relay.dev.grid.tf", "test-client", sub, false)
 	if err != nil {
 		return fmt.Errorf("failed to create direct client: %w", err)
 	}

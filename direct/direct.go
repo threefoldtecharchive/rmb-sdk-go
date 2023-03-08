@@ -1,6 +1,7 @@
 package direct
 
 import (
+	"bytes"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -79,7 +80,7 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 //
 // Make sure the context passed to Call() does not outlive the directClient's context.
 // Call() will panic if called while the directClient's context is canceled.
-func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (*DirectClient, error) {
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate, enableEncryption bool) (*DirectClient, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
 		return nil, err
@@ -106,9 +107,17 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 		return nil, errors.Wrapf(err, "failed to parse url: %s", relayURL)
 	}
 
-	if twin.E2EKey != nil || twin.Relay == nil || url.Hostname() != *twin.Relay {
+	var publicKey []byte
+	if enableEncryption {
+		publicKey = privKey.PubKey().SerializeCompressed()
+	}
+
+	if (enableEncryption && !bytes.Equal(twin.E2EKey, publicKey)) ||
+		(!enableEncryption && twin.E2EKey != nil) ||
+		twin.Relay == nil ||
+		url.Hostname() != *twin.Relay {
 		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
-		if _, err = sub.UpdateTwin(identity, url.Hostname(), nil); err != nil {
+		if _, err = sub.UpdateTwin(identity, url.Hostname(), publicKey); err != nil {
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
