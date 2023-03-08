@@ -40,9 +40,8 @@ type DirectClient struct {
 	respM     sync.Mutex
 	twinDB    TwinDB
 	privKey   *secp256k1.PrivateKey
-
-	reader Reader
-	writer Writer
+	reader    Reader
+	writer    Writer
 }
 
 func generateSecureKey(mnemonics string) (*secp256k1.PrivateKey, error) {
@@ -80,15 +79,10 @@ func getIdentity(keytype string, mnemonics string) (substrate.Identity, error) {
 //
 // Make sure the context passed to Call() does not outlive the directClient's context.
 // Call() will panic if called while the directClient's context is canceled.
-func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate) (*DirectClient, error) {
+func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL string, session string, sub *substrate.Substrate, enableEncryption bool) (*DirectClient, error) {
 	identity, err := getIdentity(keytype, mnemonics)
 	if err != nil {
 		return nil, err
-	}
-
-	privKey, err := generateSecureKey(mnemonics)
-	if err != nil {
-		return nil, errors.Wrapf(err, "could not generate secure key")
 	}
 
 	twinDB := NewTwinDB(sub)
@@ -107,9 +101,20 @@ func NewClient(ctx context.Context, keytype string, mnemonics string, relayURL s
 		return nil, errors.Wrapf(err, "failed to parse url: %s", relayURL)
 	}
 
-	if !bytes.Equal(twin.E2EKey, privKey.PubKey().SerializeCompressed()) || twin.Relay == nil || url.Hostname() != *twin.Relay {
+	var publicKey []byte
+	var privKey *secp256k1.PrivateKey
+	if enableEncryption {
+		privKey, err = generateSecureKey(mnemonics)
+		if err != nil {
+			return nil, errors.Wrapf(err, "could not generate secure key")
+
+		}
+		publicKey = privKey.PubKey().SerializeCompressed()
+	}
+
+	if !bytes.Equal(twin.E2EKey, publicKey) || twin.Relay == nil || url.Hostname() != *twin.Relay {
 		log.Info().Msg("twin relay/public key didn't match, updating on chain ...")
-		if _, err = sub.UpdateTwin(identity, url.Hostname(), privKey.PubKey().SerializeCompressed()); err != nil {
+		if _, err = sub.UpdateTwin(identity, url.Hostname(), publicKey); err != nil {
 			return nil, errors.Wrap(err, "could not update twin relay information")
 		}
 	}
@@ -252,7 +257,7 @@ func (d *DirectClient) makeRequest(dest uint32, cmd string, data []byte, ttl uin
 		return nil, errors.Wrapf(err, "failed to get twin for %d", dest)
 	}
 
-	if len(destTwin.E2EKey) > 0 {
+	if len(destTwin.E2EKey) > 0 && d.privKey != nil {
 		// destination public key is set, use e2e
 		cipher, err := d.encrypt(data, destTwin.E2EKey)
 		if err != nil {
