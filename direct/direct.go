@@ -19,7 +19,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/threefoldtech/rmb-sdk-go"
 	"github.com/threefoldtech/rmb-sdk-go/direct/types"
-	"github.com/threefoldtech/substrate-client"
+	substrate "github.com/threefoldtech/tfchain/clients/tfchain-client-go"
 	"github.com/tyler-smith/go-bip39"
 	"google.golang.org/protobuf/proto"
 )

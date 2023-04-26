@@ -8,7 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/threefoldtech/rmb-sdk-go/direct/types"
-	"github.com/threefoldtech/substrate-client"
+	substrate "github.com/threefoldtech/tfchain/clients/tfchain-client-go"
 )
 
 const sigVerifyAccMnemonics = "garage dad improve reunion girl saddle theory know label reason fantasy deputy"

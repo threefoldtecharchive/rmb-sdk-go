@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/threefoldtech/rmb-sdk-go/direct"
-	"github.com/threefoldtech/substrate-client"
+	substrate "github.com/threefoldtech/tfchain/clients/tfchain-client-go"
 )
 
 func app() error {
-	mnemonics := "<mnemonics goes here>"
+	mnemonics := "equal main output turn review web clip end daughter retire typical wrap"
 	subManager := substrate.NewManager("wss://tfchain.dev.grid.tf/ws")
 	sub, err := subManager.Substrate()
 	if err != nil {
@@ -30,6 +30,7 @@ func app() error {
 	if err := client.Ping(ctx); err != nil {
 		return fmt.Errorf("failed to do high level ping: %s", err)
 	}
+	return nil
 	const dst = 7 // <- replace this with the twin id of where the service is running
 	// it's okay to run both the server and the client behind the same rmb-peer
 	var output float64
